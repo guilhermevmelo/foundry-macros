@@ -1,0 +1,10 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "es6",
+        "types": [
+            "@league-of-foundry-developers/foundry-vtt-types"
+        ],
+        "moduleResolution": "node"
+    }
+}
