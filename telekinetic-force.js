@@ -16,14 +16,15 @@ class TelekineticForce {
         this.targets = targets || new Set()
         this.affectedTargets = new Set()
         this.missedTargets = new Set()
+        this.psionicPowerDC = actor.data.data.abilities["int"].dc
 
-        this.hammering = hammering
-        this.crushing = crushing
-        this.zoneOf = zoneOf
-        this.hurling = hurling
+        this.hammering = +hammering
+        this.crushing = crushing && true
+        this.zoneOf = +zoneOf
+        this.hurling = +hurling
         this.hurlingDirections = hurlingDirections
 
-        this.psiPointsCost = hammering + hurling + (crushing ? 2 : 0) + zoneOf
+        this.psiPointsCost = this.hammering + this.hurling + (this.crushing ? 2 : 0) + this.zoneOf
     }
 
     performPsionicPower() {
@@ -33,6 +34,7 @@ class TelekineticForce {
         }
 
         const resourceKey = Object.keys(actor.data.data.resources).filter(k => actor.data.data.resources[k].label === "Psi Points").shift();
+
         if (resourceKey && (actor.data.data.resources[resourceKey].value < this.psiPointsCost)) {
             ui.notifications.warn("You don't have enough Psi Points available")
             return false
@@ -50,16 +52,20 @@ class TelekineticForce {
 
         let rolls = []
         for (let target of this.targets) {
-            rolls.push(this.rollSave(target))
+            rolls.push(this.rollSave(target.actor))
         }
 
         Promise.all(rolls).then(() => {
-            for(let affectedTarget of this.affectedTargets) {
+            for (let affectedTarget of this.affectedTargets) {
                 this.applyEffect(affectedTarget)
             }
         })
 
         actor.data.data.resources[resourceKey].value -= this.psiPointsCost
+
+        if (actor.sheet.rendered) {
+            actor.render(true)
+        }
     }
 
     /**
@@ -68,9 +74,8 @@ class TelekineticForce {
      * @returns {Promise<Roll>}
      */
     rollSave(target) {
-        const psionicPowerDC = actor.data.data.abilities["int"].dc
         return target.rollAbilitySave("str").then(saveRoll => {
-            if(saveRoll.evaluate().result < psionicPowerDC) {
+            if (saveRoll.total < this.psionicPowerDC) {
                 this.affectedTargets.add(target)
             } else {
                 this.missedTargets.add(target)
@@ -80,9 +85,17 @@ class TelekineticForce {
 
     applyEffect(target) {
         const dmgFormula = `${this.hammering + 1}d10`
-        let dmgRoll = new Roll(dmgFormula)
-        dmgRoll.evaluate()
-        target.applyDamage(dmgRoll.result)
+        let dmgRoll = game.dnd5e.dice.damageRoll({
+            parts: [dmgFormula],
+            actor,
+            data: target,
+            allowCritical: false
+        }).then(dmgRoll => {
+            target.applyDamage(dmgRoll.total)
+            if (target.sheet.rendered) {
+                target.render(true)
+            }
+        })
     }
 }
 
@@ -92,7 +105,7 @@ const dialog = new Dialog({
     <form>
         <div>Max psi points usable = ${psiPointsPerUseLimit}</div>
         <label>Hammering</label>
-        <input type="number" name="hammering" id="psiHammering">
+        <input type="number" name="hammering" id="psiHammering" value="0">
     </form>
     `,
     buttons: {
@@ -101,9 +114,10 @@ const dialog = new Dialog({
             label: `Ok`,
             callback: (html) => {
                 // get values from form and instantiate the attack
-                const hammering = html.find("#psiHammering").value
+                const hammering = html.find("#psiHammering")[0].value
 
-                new TelekineticForce(game.user.targets, hammering)
+                const tf = new TelekineticForce(game.user.targets, hammering)
+                tf.performPsionicPower()
             }
         }
     },
